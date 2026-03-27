@@ -11,8 +11,12 @@ def temporal_weights(residuals: torch.Tensor, eps: float = 5.0) -> torch.Tensor:
     cumsum = torch.cumsum(sq, dim=0)
     total = cumsum[-1:].clamp_min(1e-8)
     weights = torch.exp(-eps * cumsum / total)
-    weights[0] = 1.0
-    return weights
+
+    first_row = torch.ones((1,weights.shape[1]),dtype=weights.dtype, device = weights.device)
+    if weights.shape[0]==1:
+        return first_row 
+    
+    return torch.cat([first_row, weights[1:]], dim=0)
 
 def weighted_loss(residuals: torch.Tensor, weights: torch.Tensor | None = None) -> torch.Tensor:
     if weights is None:
