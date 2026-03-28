@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 from .data import EventData
 
-
 ArrayLike = np.ndarray
 
 
@@ -86,11 +85,6 @@ class MarkedExpHawkesSimulator:
     def simulate(self,horizon: float,max_events: int = 100_000) -> EventData:
         """
         Simulate events up to time `horizon`.
-
-        Returns
-        -------
-        EventData
-            times, types, marks arrays
         """
         if horizon <= 0:
             raise ValueError("horizon must be positive.")
@@ -172,7 +166,7 @@ def save_events_to_csv(events: EventData, path: str) -> None:
 
 def default_toy_simulator(seed: int = 42) -> MarkedExpHawkesSimulator:
     params = MarkedExpHawkesParams(
-        mu=np.array([0.25, 0.20]),
+        mu=np.array([2.5, 2.0]),
         alpha=np.array([
             [0.18, 0.08],
             [0.06, 0.16],
@@ -189,6 +183,6 @@ def default_toy_simulator(seed: int = 42) -> MarkedExpHawkesSimulator:
 
 if __name__ == "__main__":
     sim = default_toy_simulator(seed=42)
-    events = sim.simulate(horizon=30.0, max_events=50_000)
+    events = sim.simulate(horizon=3000.0, max_events=50_000)
     save_events_to_csv(events, "data/events.csv")
     print(f"Saved {events.n_events} events to data/events.csv")

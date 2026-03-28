@@ -28,7 +28,7 @@ def estimate_first_order_stats(events: EventData, D: int):
     horizon = max(events.horizon, 1e-8)
     return counts / horizon
 
-def estimate_second_order_stats(events: EventData, D: int, M: int,time_edges: np.ndarray) -> np.ndarray:
+def estimate_second_order_stats(events: EventData, D: int, M: int,time_edges: np.ndarray, lambda_hat:np.ndarray) -> np.ndarray:
     """
     events : EventData - it should be sorted by time and already have marks_binned attached
     D : int - Number of event types
@@ -89,10 +89,8 @@ def estimate_second_order_stats(events: EventData, D: int, M: int,time_edges: np
             n_triggers = trigger_counts[j, m]
             if n_triggers == 0:
                 continue
-
-            G_hat[:, j, :, m] = counts[:, j, :, m] / (
-                n_triggers * bin_widths[None, :]
-            )
+            raw = counts[:,j,:,m]/(n_triggers * bin_widths[None, :])
+            G_hat[:, j, :, m] = raw - lambda_hat[:, None]  # shape [D, L]
 
     return G_hat
 
