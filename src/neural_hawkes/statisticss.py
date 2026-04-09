@@ -1,5 +1,5 @@
 import numpy as np
-from .data import EventData
+from data import EventData
 
 def build_time_grid(T: float, h: float, t_min: float, nlin: int, nlog: int):
     """
@@ -28,6 +28,7 @@ def estimate_first_order_stats(events: EventData, D: int):
     horizon = max(events.horizon, 1e-8)
     return counts / horizon
 
+''' old version without correction 
 def estimate_second_order_stats(events: EventData, D: int, M: int,time_edges: np.ndarray, lambda_hat:np.ndarray) -> np.ndarray:
     """
     events : EventData - it should be sorted by time and already have marks_binned attached
@@ -90,6 +91,85 @@ def estimate_second_order_stats(events: EventData, D: int, M: int,time_edges: np
             if n_triggers == 0:
                 continue
             raw = counts[:,j,:,m]/(n_triggers * bin_widths[None, :])
+            G_hat[:, j, :, m] = raw - lambda_hat[:, None]  # shape [D, L]
+
+    return G_hat
+'''
+def estimate_second_order_stats(events: EventData,D: int,M: int,time_edges: np.ndarray,lambda_hat: np.ndarray) -> np.ndarray:
+    """
+    Estimate G_hat with a right-edge correction.
+    Improvement proposed by Oscar:
+    a trigger event at time t_r is only used if its whole forward lag window
+    [t_r, t_r + T_max] is observable inside the sample. Otherwise the trigger is
+    excluded from both the numerator and denominator. This removes the downward
+    bias near large lags caused by end-of-sample truncation.
+
+    events : EventData - it should be sorted by time and already have marks_binned attached
+    D : int - Number of event types
+    M : int - Number of mark bins
+    time_edges : np.ndarray - Lag bin edges of shape [L+1]
+    """
+    if events.marks_binned is None:
+        raise ValueError("marks_binned is missing, we need to discretize marks first.")
+
+    times = events.times
+    types = events.types
+    marks_binned = events.marks_binned
+
+    if len(time_edges) < 2:
+        raise ValueError("time_edges must have length at least 2.")
+
+    L = len(time_edges) - 1
+    T_max = float(time_edges[-1])
+    counts = np.zeros((D, D, L, M), dtype=float)
+
+    # Number of eligible trigger events per (type, mark_bin)
+    trigger_counts = np.zeros((D, M), dtype=float)
+
+    n_events = events.n_events
+    horizon = float(events.horizon)
+
+    # Right-edge correction: we only use triggers with a full observable future window.
+    eligible = times <= (horizon - T_max)
+
+    for r in range(n_events):
+        if not eligible[r]:
+            continue
+
+        t_r = times[r]
+        j = types[r]
+        m = marks_binned[r]
+
+        trigger_counts[j, m] += 1.0
+
+        q = r + 1
+        while q < n_events:
+            delta_t = times[q] - t_r
+
+            if delta_t >= T_max:
+                break
+
+            if delta_t < time_edges[0]:
+                q += 1
+                continue
+
+            ell = np.searchsorted(time_edges, delta_t, side="right") - 1
+
+            if 0 <= ell < L:
+                i = types[q]
+                counts[i, j, ell, m] += 1.0
+
+            q += 1
+
+    bin_widths = np.diff(time_edges)  # shape [L]
+    G_hat = np.zeros_like(counts)
+
+    for j in range(D):
+        for m in range(M):
+            n_triggers = trigger_counts[j, m]
+            if n_triggers == 0:
+                continue
+            raw = counts[:, j, :, m] / (n_triggers * bin_widths[None, :])
             G_hat[:, j, :, m] = raw - lambda_hat[:, None]  # shape [D, L]
 
     return G_hat

@@ -1,18 +1,65 @@
 from __future__ import annotations
 
 import random
-from dataclasses import asdict
+from dataclasses import asdict,dataclass
 from typing import Any
 
 import numpy as np
 import torch
+import copy 
 
-from .config import Config
-from .data import load_csv
-from .loss import (compute_zeta_weights_for_row,evaluate_model_on_grid,fredholm_row_loss_on_points,temporal_weights,transform_mark_inputs,transform_time_inputs)
-from .models import KernelRowNet
-from .preprocessing import discretize_marks
-from .statistics import (build_time_grid,estimate_first_order_stats,estimate_mark_pmf,estimate_second_order_stats)
+from data import load_csv
+from loss import (compute_zeta_weights_for_row,evaluate_model_on_grid,fredholm_row_loss_on_points,temporal_weights,transform_mark_inputs,transform_time_inputs)
+from models import KernelRowNet
+from preprocessing import discretize_marks
+from statisticss import (build_time_grid,estimate_first_order_stats,estimate_mark_pmf,estimate_second_order_stats)
+
+@dataclass
+class Config:
+    D: int = 2
+    M: int = 5#
+
+    # (Eq. 28 in the paper)
+    T: float = 10.0
+    h: float = 1.0
+    t_min: float | None = None   # if None, we use h / nlin as in the paper's numerical experiments
+    nlin: int = 50#8
+    nlog: int = 100# 8
+
+    # Quadrature grid for the Fredholm integral
+    n_quadrature: int = 250 #here for test
+    quadrature_grid_type: str = "log"  # "log" or "linear"
+
+    # Mark discretization
+    mark_bin_strategy: str = "quantile"  # "quantile" or "uniform"
+    use_exact_mark_grid: bool = False 
+    
+    # DGM network hyperparameters
+    hidden_dim: int = 64
+    dgm_layers: int = 1
+
+    # (Table 1 of the paper)
+    n_collocation: int = 1024#64
+    n_validation: int = 128 #16
+    batch_size: int = 8
+    epochs: int = 1000 #5to test /debeug
+    learning_rate: float = 1e-3
+    weight_eps: float = 5.0
+    short_time_fraction: float = 0.3
+
+    # Optional boundary penalty would be u(T, x) = 0
+    boundary_weight: float = 0.1
+
+    # Optional Eq. (29)-(30) weighting for kernels with very different magnitudes
+    use_cross_kernel_weighting: bool = False
+
+    seed: int = 42
+    device: str = "cpu"
+    use_log_time_input: bool = True
+    normalize_marks_for_nn: bool = True
+    print_every: int = 25#1
+
+    #enforce_positive_kernel: bool = False # not in the paper, but should stabilize f_{ij} for our test/synthetic data
 
 
 def set_seed(seed: int) -> None:
@@ -45,6 +92,32 @@ def build_quadrature_grid(T: float, t_min: float, n_quadrature: int, grid_type: 
     weights = np.diff(edges)
     return centers.astype(float), weights.astype(float)
 
+def prepare_mark_grid(events,config: Config) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    If use_exact_mark_grid=True, marks are already the paper's discrete support {1,...,M}.
+    We map them directly to bins {0,...,M-1} and we don't quantile-bin them.
+    """
+    if config.use_exact_mark_grid:
+        raw_marks = np.asarray(events.marks, dtype=float)
+        rounded = np.rint(raw_marks).astype(int)
+
+        if not np.allclose(raw_marks, rounded):
+            raise ValueError(
+                "use_exact_mark_grid=True but marks are not integer-valued. "
+                "For paper simulations, marks must be exactly 1,...,M."
+            )
+        if np.any(rounded < 1) or np.any(rounded > config.M):
+            raise ValueError(
+                f"Exact paper marks must lie in {{1, ..., {config.M}}}."
+            )
+
+        marks_binned = rounded - 1
+        bin_centers = np.arange(1, config.M + 1, dtype=float)
+        bin_edges = np.arange(0.5, config.M + 1.5, 1.0)
+        return marks_binned.astype(int), bin_edges, bin_centers
+
+    return discretize_marks(events.marks,n_bins=config.M,strategy=config.mark_bin_strategy)
+
 def prepare_statistics(data_path: str, config: Config) -> dict[str, Any]:
     """
     Full preprocessing + statistics pipeline
@@ -52,11 +125,12 @@ def prepare_statistics(data_path: str, config: Config) -> dict[str, Any]:
     events = load_csv(data_path)
     events.validate(config.D)
 
-    marks_binned, bin_edges, bin_centers = discretize_marks(
-        events.marks,
-        n_bins=config.M,
-        strategy=config.mark_bin_strategy,
-    )
+    #marks_binned, bin_edges, bin_centers = discretize_marks(
+    #    events.marks,
+    #    n_bins=config.M,
+    #    strategy=config.mark_bin_strategy,
+    #)
+    marks_binned, bin_edges, bin_centers = prepare_mark_grid(events, config)
     events.attach_binned_marks(marks_binned)
 
     effective_t_min = resolve_t_min(config)
@@ -165,7 +239,11 @@ def learning_rate_at_epoch(epoch: int, config: Config) -> float:
     return float(config.learning_rate * (100.0 ** (-frac)))
 
 
-def train_one_row(row_index: int,stats_torch: dict[str, torch.Tensor | float],config: Config) -> tuple[KernelRowNet, dict[str, list[float]]]:
+def train_one_row(
+    row_index: int,
+    stats_torch: dict[str, torch.Tensor | float],
+    config: Config,
+) -> tuple[KernelRowNet, dict[str, list[float] | float | int]]:
     device = torch.device(config.device)
 
     mark_bin_centers = stats_torch["mark_bin_centers"]
@@ -194,23 +272,37 @@ def train_one_row(row_index: int,stats_torch: dict[str, torch.Tensor | float],co
     ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
-    G_row = G_hat[row_index]  # [D, L, M]
+    G_row = G_hat[row_index]
     zeta_weights_by_mark = None
+
     if config.use_cross_kernel_weighting:
         zeta_weights_by_mark = compute_zeta_weights_for_row(
             G_hat=G_hat,
             stats_time_grid=stats_time_centers,
             row_index=row_index,
         )
-    history = {"train_loss": [], "val_loss": [], "lr": []}
+
+    history: dict[str, list[float] | float | int] = {
+        "train_loss": [],
+        "val_loss": [],
+        "lr": [],
+    }
+
+    best_val = float("inf")
+    best_epoch = -1
+    best_state_dict = None
 
     for epoch in range(config.epochs):
         lr = learning_rate_at_epoch(epoch, config)
         for group in optimizer.param_groups:
             group["lr"] = lr
 
-        train_times, train_mark_bins = sample_collocation_points(config, config.n_collocation, device)
-        val_times, val_mark_bins = sample_collocation_points(config, config.n_validation, device)
+        train_times, train_mark_bins = sample_collocation_points(
+            config, config.n_collocation, device
+        )
+        val_times, val_mark_bins = sample_collocation_points(
+            config, config.n_validation, device
+        )
 
         model.eval()
         with torch.no_grad():
@@ -233,14 +325,17 @@ def train_one_row(row_index: int,stats_torch: dict[str, torch.Tensor | float],co
                 mark_std=mark_std,
                 weights=None,
                 boundary_weight=0.0,
-                #zeta_weights_by_mark=zeta_weights_by_mark,
             )
-            train_weights = temporal_weights(train_residuals_for_weights, eps=config.weight_eps)
+            train_weights = temporal_weights(
+                train_residuals_for_weights, eps=config.weight_eps
+            )
 
         model.train()
         batch_losses: list[float] = []
+
         for start in range(0, config.n_collocation, config.batch_size):
             stop = min(start + config.batch_size, config.n_collocation)
+
             optimizer.zero_grad()
 
             batch_loss, _ = fredholm_row_loss_on_points(
@@ -266,6 +361,7 @@ def train_one_row(row_index: int,stats_torch: dict[str, torch.Tensor | float],co
             )
             batch_loss.backward()
             optimizer.step()
+
             batch_losses.append(float(batch_loss.detach().cpu().item()))
 
         model.eval()
@@ -292,20 +388,35 @@ def train_one_row(row_index: int,stats_torch: dict[str, torch.Tensor | float],co
                 zeta_weights_by_mark=None,
             )
 
-        history["train_loss"].append(float(np.mean(batch_losses)))
-        history["val_loss"].append(float(val_loss.detach().cpu().item()))
+        train_loss_value = float(np.mean(batch_losses))
+        val_loss_value = float(val_loss.detach().cpu().item())
+
+        history["train_loss"].append(train_loss_value)
+        history["val_loss"].append(val_loss_value)
         history["lr"].append(lr)
+
+        if val_loss_value < best_val:
+            best_val = val_loss_value
+            best_epoch = epoch
+            best_state_dict = copy.deepcopy(model.state_dict())
 
         if epoch % config.print_every == 0 or epoch == config.epochs - 1:
             print(
                 f"[row {row_index}] epoch {epoch:04d} "
                 f"lr={lr:.3e} "
-                f"train={history['train_loss'][-1]:.6e} "
-                f"val={history['val_loss'][-1]:.6e}"
+                f"train={train_loss_value:.6e} "
+                f"val={val_loss_value:.6e} "
+                f"best_val={best_val:.6e} "
+                f"best_epoch={best_epoch}"
             )
 
-    return model, history
+    if best_state_dict is not None:
+        model.load_state_dict(best_state_dict)
 
+    history["best_val_loss"] = best_val
+    history["best_epoch"] = best_epoch
+
+    return model, history
 
 def train_all_rows(data_path: str, config: Config | None = None) -> dict[str, Any]:
     if config is None:
@@ -355,7 +466,7 @@ def predict_row_on_grid(model: KernelRowNet, time_centers: np.ndarray, bin_cente
 
     return phi_grid.cpu().numpy()
 
-
-if __name__ == "__main__":
-    config = Config()
-    results = train_all_rows(data_path="data/events.csv", config=config)
+#Testing partially here 
+#if __name__ == "__main__":
+#    config = Config()
+#    results = train_all_rows(data_path="data/events.csv", config=config)
