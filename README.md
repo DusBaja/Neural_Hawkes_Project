@@ -2,64 +2,63 @@
 
 PyTorch implementation of a **physics-informed neural network (PINN)** estimator for **marked Hawkes process kernels**.
 
-## Overview
-
-Hawkes processes are used to model self-exciting event streams, where the occurrence of one event increases the probability of future events. They are especially useful in financial market microstructure, where events such as trades, order submissions, or cancellations arrive asynchronously and often cluster in time.
-
-This project focuses on **high-dimensional marked Hawkes processes**, where each event may carry additional information such as volume or size. The main objective is to estimate the interaction kernels that describe how past events influence future intensities.
-
-Our work is based on the paper:
+This project is inspired by the paper:
 
 **Timothée Fabre and Ioane Muni Toke**  
 *Neural Hawkes: Non-Parametric Estimation in High Dimension and Causality Analysis in Cryptocurrency Markets*
 
-## Project Goals
 
-The goals of this repository are:
+## Overview
 
-1. **Implement** the proposed PINN-based Hawkes kernel estimator in **PyTorch**.
-2. **Reproduce** selected numerical experiments and empirical findings from the paper.
-3. **Explore** practical issues such as stability, scaling, sampling, and training performance.
+Hawkes processes are point processes used to model event arrivals that cluster over time. In the multivariate marked setting, each event has:
 
-## Method Summary
+- a **time**
+- a **type**
+- an optional **mark** (for example volume, size, or another event attribute)
 
-Classical non-parametric Hawkes kernel estimation often relies on the **Wiener–Hopf approach**, which solves a discretized Fredholm equation by matrix inversion. In high-dimensional marked settings, this can become computationally expensive, noisy, and unstable.
+The main goal is to estimate the kernel matrix  
+\[
+\Phi = (\varphi^{ij})
+\]
+which describes how past events of type \(j\) influence the future intensity of events of type \(i\).
 
-The idea of the reference paper is to replace this direct numerical inversion with a **physics-informed neural network**:
+Classical non-parametric estimation often relies on the **Wiener–Hopf** approach, which solves a discretized Fredholm equation by matrix inversion. In high dimension, this can become unstable and expensive.  
+The approach implemented here replaces that inversion step with a **physics-informed neural network** trained to satisfy the Hawkes characterization equation.
 
-- represent the unknown Hawkes kernel with a neural network,
-- define a residual from the Fredholm characterization equation,
-- train the network so that the residual is minimized on sampled collocation points.
+---
 
-Key ingredients of the method include:
+## Project goals
 
-- **Fredholm equation of the second kind** for kernel identification,
-- **PINN loss** based on the characterization equation residual,
-- **causal temporal weighting** to improve accuracy at short times,
-- **scale-aware weighting** for kernel components with different magnitudes,
-- **DGM-style architecture** with ReLU activations,
-- **mixed sampling strategy** with more points at small times,
-- **log-scaling of time** and **z-score normalization of marks**.
+This repository aims to:
 
-## Repository Structure
+1. implement the moment-based **Neural Hawkes** estimator in **PyTorch**
+2. reproduce core experiments from the reference paper on synthetic data
+3. compare the PINN estimator with a **Wiener–Hopf benchmark**
+4. study practical issues such as:
+   - time-grid design
+   - mark discretization
+   - causal temporal weighting
+   - scaling and normalization
+   - numerical stability
 
-A possible structure for the repository is:
+---
+
+## Current repository structure
 
 ```text
 Neural_Hawkes_Project/
-│
 ├── README.md
 ├── requirements.txt
-├── src/
-│   └── neural_hawkes/
-│       ├── __init__.py
-│       ├── model.py
-│       ├── loss.py
-│       ├── data.py
-│       ├── statistics.py
-│       ├── train.py
-│       └── utils.py
-├── notebooks/
-├── tests/
-├── data/
-└── docs/
+└── src/
+    ├── data/
+    └── neural_hawkes/
+        ├── __init__.py
+        ├── data.py
+        ├── loss.py
+        ├── models.py
+        ├── StatisticEstimators.py
+        ├── MHP.py
+        ├── WH.py
+        ├── Exp_Kernel.ipynb
+        ├── Gaussien_Kernel.ipynb
+        └── Kernel_with_inhibition.ipynb

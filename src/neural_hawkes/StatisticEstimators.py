@@ -9,7 +9,7 @@ from scipy.interpolate import interp1d, UnivariateSpline
 from data import EventData
 
 
-# ── First-order statistics ─────────────────────────────────────────────────────
+#  First-order statistics 
 
 def estimate_Lambda(events: EventData) -> np.ndarray:
     """
@@ -33,7 +33,7 @@ def recover_mu(Lambda: np.ndarray, norm_Phi: np.ndarray) -> np.ndarray:
     return (np.eye(len(Lambda)) - norm_Phi) @ Lambda
 
 
-# ── Mark distribution ──────────────────────────────────────────────────────────
+# Mark distribution 
 
 def estimate_mark_distribution(
     events: EventData,
@@ -92,7 +92,7 @@ def estimate_mark_distribution(
     }
 
 
-# ── Time grid ─────────────────────────────────────────────────────────────────
+#  Time grid
 
 def build_time_grid(T: float, h: float, n_lin: int, n_log: int) -> np.ndarray:
     """

@@ -58,6 +58,16 @@ class MHP:
                     self.Phi[i, j] = (lambda _a, _w: (lambda t: _a * _w * np.exp(-_w * np.asarray(t))))(a, w)
         else:
             raise ValueError("Phi must be either all callables or all scalars.")
+        
+        if self._mode == "custom":
+            cutoffs = []
+            for i in range(self.D):
+                for j in range(self.D):
+                    if hasattr(self.Phi[i, j], "cutoff"):
+                        cutoffs.append(float(self.Phi[i, j].cutoff))
+            self.memory_window = max(cutoffs) if cutoffs else self.T_max
+        else:
+            self.memory_window = np.inf
 
     def check_stability(self, n_grid=5000):
         """
@@ -100,14 +110,15 @@ class MHP:
         return np.linalg.solve(np.eye(self.D) - K, self.mu)
 
     def lambda_i(self, t, data, i):
-        """
-        Evaluate \lambda^i_t given event history.
-        """
         if len(data) == 0:
             return float(self.mu[i])
 
         past = np.asarray(data, dtype=float)
         past = past[past[:, 0] < t]
+
+        if self._mode == "custom" and np.isfinite(self.memory_window):
+            past = past[past[:, 0] >= t - self.memory_window]
+
         if len(past) == 0:
             return float(self.mu[i])
 
@@ -196,30 +207,28 @@ class MHP:
         return S
 
     def _generate_custom_safe(self, horizon, rng):
-        """
-        Safe thinning for arbitrary nonnegative custom kernels.
-
-        Uses the dominating bound:
-            I*(t) = sum_i \mu_i + sum_{past events k of type j} sum_i sup_u \phi^{ij}(u)
-
-        This is valid even for delayed/discontinuous kernels, but can be slow.
-        """
         if np.sum(self.mu) <= 0:
             return np.empty((0, 2), dtype=float)
 
         S = self._kernel_sup_matrix()
-        jump_bound_by_source = S.sum(axis=0)  # source j -> total max contribution to total intensity
+        jump_bound_by_source = S.sum(axis=0)
 
         times = []
         types = []
-
         t = 0.0
 
         while True:
             if len(types) == 0:
                 Istar = float(np.sum(self.mu))
+                recent_idx = np.array([], dtype=int)
             else:
-                counts = np.bincount(np.array(types, dtype=int), minlength=self.D)
+                times_arr = np.asarray(times, dtype=float)
+                types_arr = np.asarray(types, dtype=int)
+
+                recent_idx = np.where(times_arr >= t - self.memory_window)[0]
+                recent_types = types_arr[recent_idx]
+
+                counts = np.bincount(recent_types, minlength=self.D)
                 Istar = float(np.sum(self.mu) + np.dot(jump_bound_by_source, counts))
 
             if Istar <= 0:
@@ -232,15 +241,21 @@ class MHP:
             if len(times) == 0:
                 data = np.empty((0, 2), dtype=float)
             else:
-                data = np.column_stack([np.asarray(times, dtype=float), np.asarray(types, dtype=float)])
+                times_arr = np.asarray(times, dtype=float)
+                types_arr = np.asarray(types, dtype=float)
+
+                if np.isfinite(self.memory_window):
+                    mask = times_arr >= t - self.memory_window
+                    data = np.column_stack([times_arr[mask], types_arr[mask]])
+                else:
+                    data = np.column_stack([times_arr, types_arr])
 
             rates = self.lambda_t(t, data)
             total = float(np.sum(rates))
 
             if total > Istar + 1e-12:
                 raise RuntimeError(
-                    f"Invalid upper bound in custom thinning: total={total:.6f} > Istar={Istar:.6f}. "
-                    "Increase T_max if the kernel support exceeds T_max."
+                    f"Invalid upper bound in custom thinning: total={total:.6f} > Istar={Istar:.6f}."
                 )
 
             if total > 0 and rng.uniform() <= total / Istar:
