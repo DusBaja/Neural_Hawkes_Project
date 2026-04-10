@@ -1,26 +1,24 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-
+#D-dimensional linear Hawkes process
 class MHP:
     """
-    D-dimensional linear Hawkes process
     The conditional intensity of component i is:
         \lambda^i_t = \mu^i  +  \sum_j  \sum_{t_k^j < t}  \phi^{ij}(t − t_k^j)
     where  \Phi = (\phi^{ij})_{1≤i,j≤D}  is the kernel matrix.
 
-    Parametric mode (default)
+    Parametric mode (by default):
     Pass Phi as a (D×D) array of floats \alpha^{ij}
     Kernels are exponential:  \phi^{ij}(t) = \alpha^{ij} · \omega · exp(−\omega·t)
 
     Custom kernel mode
-    Pass Phi as a (D×D) array of callables \phi^{ij} : R_+ → R_+
+    Pass Phi as a (D×D) array of callables \phi^{ij} : from R_+ to R_+
 
-    Parameters
-    ----------
+    Parameters:
     mu    : (D,) array of baseline intensities \mu^i
-    omega : float — exponential decay rate \omega (parametric)
-    T_max : float — integration horizon for stability check in custom mode
+    omega : float ie exponential decay rate \omega (parametric)
+    T_max : float ie integration horizon for stability check in custom mode
     """
 
     def __init__(self, Phi=[[0.5]], mu=[0.1], omega=1.0, T_max=50.0):
@@ -71,7 +69,7 @@ class MHP:
 
     def check_stability(self, n_grid=5000):
         """
-        Compute spectral radius $\rho(||\Phi||)$, where ||\Phi||_{ij} = ∫ \phi^{ij}(t) dt.
+        Compute spectral radius $\rho(||\Phi||)$, where ||\Phi||_{ij} = \int \phi^{ij}(t) dt.
         """
         t_grid = np.linspace(1e-8, self.T_max, n_grid)
         norm_Phi = np.zeros((self.D, self.D), dtype=float)
@@ -92,7 +90,7 @@ class MHP:
 
     def kernel_norm_matrix(self, n_grid=5000):
         """
-        Return K_{ij} = ∫ \phi^{ij}(t) dt over [0, T_max].
+        Return K_{ij} = \int \phi^{ij}(t) dt over [0, T_max].
         """
         t_grid = np.linspace(1e-8, self.T_max, n_grid)
         K = np.zeros((self.D, self.D), dtype=float)
@@ -129,13 +127,13 @@ class MHP:
 
     def lambda_t(self, t, data):
         """
-        Return the full intensity vector.
+        This function returns the full intensity vector.
         """
         return np.array([self.lambda_i(t, data, i) for i in range(self.D)], dtype=float)
 
     def generate(self, horizon=10.0, seed=None):
         """
-        Simulate the process on [0, horizon] via thinning.
+        This function simulates the process on [0, horizon] by thinning.
         """
         if horizon <= 0:
             raise ValueError("horizon must be positive.")
@@ -270,7 +268,7 @@ class MHP:
 
     def plot_intensity(self, data, horizon=10.0, n_points=500):
         """
-        Plot \lambda^i_t for all components i over [0, horizon].
+        This function plots \lambda^i_t for all components i over [0, horizon].
         Event times are shown as tick marks on the time axis.
         """
         t_grid = np.linspace(1e-4, horizon, n_points)
@@ -297,7 +295,7 @@ class MHP:
 
     def plot_kernels(self, t_max=5.0, n_points=300):
         """
-        Plot all kernel functions $\phi^{ij}(t)$ on [0, t_max].
+        This function plots all kernel functions $\phi^{ij}(t)$ on [0, t_max].
         """
         t_grid = np.linspace(1e-6, t_max, n_points)
         fig, axes = plt.subplots(
@@ -331,7 +329,7 @@ class MHP:
 
 def nn_to_phi(models, t_scaler, x_scaler, mark_grid=None, mark_weights=None):
     """
-    Convert D trained models into a (D×D) object array of callables ready for MHP(Phi=...).
+    This function converts D trained models into a (D×D) object array of callables ready for MHP(Phi=...).
     """
     D = len(models)
 

@@ -94,9 +94,6 @@ def evaluate_model_on_grid(model: torch.nn.Module, time_inputs: torch.Tensor, ma
 
 
 def _linear_interp_1d(values: torch.Tensor, grid: torch.Tensor, queries: torch.Tensor) -> torch.Tensor:
-    """
-    Linear interpolation of a single time series.
-    """
     if values.ndim != 1:
         raise ValueError("values must have shape [L].")
     if grid.ndim != 1:
@@ -116,11 +113,8 @@ def _linear_interp_1d(values: torch.Tensor, grid: torch.Tensor, queries: torch.T
     alpha = (q - x0) / (x1 - x0).clamp_min(1e-12)
     return y0 + alpha * (y1 - y0)
 
-
+#Row-wise linear interpolation:
 def _linear_interp_rowwise(values: torch.Tensor, grid: torch.Tensor, queries: torch.Tensor) -> torch.Tensor:
-    """
-    Row-wise linear interpolation.
-    """
     if values.ndim != 2:
         raise ValueError("values must have shape [N, L].")
     if grid.ndim != 1:
@@ -143,11 +137,8 @@ def _linear_interp_rowwise(values: torch.Tensor, grid: torch.Tensor, queries: to
     alpha = (q - x0) / (x1 - x0).clamp_min(1e-12)
     return y0 + alpha * (y1 - y0)
 
-
+#Interpolate multiple series on the same query vector.
 def _linear_interp_matrix_common_queries(values: torch.Tensor, grid: torch.Tensor, queries: torch.Tensor) -> torch.Tensor:
-    """
-    Interpolate multiple series on the same query vector.
-    """
     if values.ndim != 2:
         raise ValueError("values must have shape [M, L].")
     if grid.ndim != 1:
@@ -170,7 +161,7 @@ def _linear_interp_matrix_common_queries(values: torch.Tensor, grid: torch.Tenso
 
 def interpolate_G_row(G_row: torch.Tensor,stats_time_grid: torch.Tensor,query_times: torch.Tensor,mark_bins: torch.Tensor) -> torch.Tensor:
     """
-    Interpolate G_{ij}(t, x) for a fixed row i.
+    We interpolate G_{ij}(t, x) for a fixed row i
     """
     if G_row.ndim != 3:
         raise ValueError("G_row must have shape [D, L, M].")
