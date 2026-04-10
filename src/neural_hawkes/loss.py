@@ -209,7 +209,7 @@ def evaluate_model_on_quadrature_grid(model: torch.nn.Module,quadrature_times: t
 
 def compute_integral_terms(phi_quad: torch.Tensor,collocation_times: torch.Tensor,collocation_mark_bins: torch.Tensor,quadrature_times: torch.Tensor,quadrature_weights: torch.Tensor,stats_time_grid: torch.Tensor,G_hat: torch.Tensor,lambda_hat: torch.Tensor,p_mark: torch.Tensor) -> torch.Tensor:
     """
-    Compute the Fredholm integral term at sampled collocation points.
+    Here, we compute the Fredholm integral term at sampled collocation points.
 
     """
     if phi_quad.ndim != 3:
@@ -260,7 +260,7 @@ def compute_integral_terms(phi_quad: torch.Tensor,collocation_times: torch.Tenso
 
 def compute_row_residuals_on_points(model: torch.nn.Module,collocation_times: torch.Tensor,collocation_mark_bins: torch.Tensor,quadrature_times: torch.Tensor,quadrature_weights: torch.Tensor,mark_bin_centers: torch.Tensor,stats_time_grid: torch.Tensor,G_row: torch.Tensor,G_hat: torch.Tensor,lambda_hat: torch.Tensor,p_mark: torch.Tensor,use_log_time_input: bool,normalize_marks_for_nn: bool,mark_mean: float,mark_std: float) -> torch.Tensor:
     """
-    Residuals of Eq. (19) evaluated at sampled collocation points.
+    Those are the residuals of Eq. (19) evaluated at sampled collocation points.
     """
     model_term = evaluate_model_at_collocation(
         model=model,

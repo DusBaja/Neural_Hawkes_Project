@@ -16,11 +16,7 @@ Hawkes processes are point processes used to model event arrivals that cluster o
 - a **type**
 - an optional **mark** (for example volume, size, or another event attribute)
 
-The main goal is to estimate the kernel matrix  
-\[
-\Phi = (\varphi^{ij})
-\]
-which describes how past events of type \(j\) influence the future intensity of events of type \(i\).
+The main goal is to estimate the kernel matrix $\Phi = (\varphi^{ij})$ which describes how past events of type j influence the future intensity of events of type i.
 
 Classical non-parametric estimation often relies on the **Wiener–Hopf** approach, which solves a discretized Fredholm equation by matrix inversion. In high dimension, this can become unstable and expensive.  
 The approach implemented here replaces that inversion step with a **physics-informed neural network** trained to satisfy the Hawkes characterization equation.
